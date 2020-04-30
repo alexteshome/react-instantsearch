@@ -50,6 +50,14 @@ function getInMemoryCache() {
   };
 }
 
+function flattenHits(cachedHits) {
+  return Object.keys(cachedHits)
+    .sort()
+    .reduce((acc, page) => {
+      return acc.concat(cachedHits[page]);
+    }, []);
+}
+
 /**
  * InfiniteHits connector provides the logic to create connected
  * components that will render an continuous list of results retrieved from
@@ -71,9 +79,14 @@ export default createConnector({
 
     this._prevState = this._prevState || {};
 
+    const cache = props.cache || getInMemoryCache();
+    if (this._cachedHits === undefined) {
+      this._cachedHits = cache.read({ state: searchState }) || {};
+    }
+
     if (!results) {
       return {
-        hits: [],
+        hits: flattenHits(this._cachedHits),
         hasPrevious: false,
         hasMore: false,
         refine: () => {},
@@ -96,17 +109,12 @@ export default createConnector({
       results.queryID
     );
 
-    const cache = props.cache || getInMemoryCache();
-    const stateForCache = results._state || {};
-    if (
-      this._cachedHits === undefined ||
-      !isEqual(currentState, this._prevState)
-    ) {
-      this._cachedHits = cache.read({ state: stateForCache }) || {};
+    if (!isEqual(currentState, this._prevState)) {
+      this._cachedHits = cache.read({ state: searchState }) || {};
     }
     if (this._cachedHits[page] === undefined) {
       this._cachedHits[page] = hitsWithPositionsAndQueryID;
-      cache.write({ state: stateForCache, hits: this._cachedHits });
+      cache.write({ state: searchState, hits: this._cachedHits });
     }
 
     this._prevState = currentState;
@@ -116,11 +124,6 @@ export default createConnector({
     */
     const firstReceivedPage = Math.min(...Object.keys(this._cachedHits));
     const lastReceivedPage = Math.max(...Object.keys(this._cachedHits));
-    const flattenHits = Object.keys(this._cachedHits)
-      .sort()
-      .reduce((acc, _page) => {
-        return acc.concat(this._cachedHits[_page]);
-      }, []);
 
     const hasPrevious = firstReceivedPage > 0;
     const lastPageIndex = nbPages - 1;
@@ -129,7 +132,7 @@ export default createConnector({
     const refineNext = event => this.refine(event, lastReceivedPage + 1);
 
     return {
-      hits: flattenHits,
+      hits: flattenHits(this._cachedHits),
       hasPrevious,
       hasMore,
       refinePrevious,
